@@ -34,6 +34,13 @@ def get_utc_time():
     """
     return datetime.utcnow().replace(microsecond=0)
 
+def create_model_version_class(model_class, version_suffix):
+
+    newclass = type(model_class.__name__ + version_suffix, model_class.__bases__, dict(model_class.__dict__))
+#    newclass.__name__ = model_class.__name__ + version_suffix
+#    newclass._class_name = model_class.__name__ + version_suffix
+    return newclass
+
 
 class EveMongoengine(object):
     """
@@ -100,6 +107,19 @@ class EveMongoengine(object):
         except KeyError:
             self.date_created = '_created'
 
+        try:
+            self.etag = config['ETAG']
+        except KeyError:
+            self.etag = '_etag'
+
+
+        if config['VERSIONING']:
+            try:
+                self.version = config['VERSION']
+            except:
+                self.version = "_version"
+
+
     def init_app(self, app):
         """
         Binds EveMongoengine extension to created eve application.
@@ -150,28 +170,134 @@ class EveMongoengine(object):
             if not issubclass(model_cls, mongoengine.Document):
                 raise TypeError("Class '%s' is not a subclass of "
                                 "mongoengine.Document." % model_cls.__name__)
-
+            schema = self.schema_mapper_class.create_schema(model_cls,
+                                                            lowercase)
             resource_name = model_cls.__name__
             if lowercase:
                 resource_name = resource_name.lower()
-
-            # add new fields to model class to get proper Eve functionality
-            self.fix_model_class(model_cls)
-            self.models[resource_name] = model_cls
-
-            schema = self.schema_mapper_class.create_schema(model_cls,
-                                                            lowercase)
             # create resource settings
             resource_settings = Settings({'schema': schema})
             resource_settings.update(settings)
             # register to the app
             self.app.register_resource(resource_name, resource_settings)
+            # add new fields to model class to get proper Eve functionality
+            self.fix_model_class(model_cls)
+            self.models[resource_name] = model_cls
             # add sub-resource functionality for every ReferenceField
             subresources = self.schema_mapper_class.get_subresource_settings
             for registration in subresources(model_cls, resource_name,
                                              resource_settings, lowercase):
                 self.app.register_resource(*registration)
                 self.models[registration[0]] = model_cls
+
+
+            if self.app.config["VERSIONING"]: # add version model
+
+                versioned_model_class = create_model_version_class(model_cls, self.app.config['VERSIONS'])
+
+                schema = self.schema_mapper_class.create_schema(versioned_model_class,
+                                                            lowercase)
+                resource_name = versioned_model_class.__name__
+                if lowercase:
+                    resource_name = resource_name.lower()
+                # create resource settings
+                resource_settings = Settings({'schema': schema})
+                resource_settings.update(settings)
+                # register to the app
+                self.app.register_resource(resource_name, resource_settings)
+                # add new fields to model class to get proper Eve functionality
+                self.fix_model_version_class(versioned_model_class)
+                self.models[resource_name] = versioned_model_class
+                # add sub-resource functionality for every ReferenceField
+                subresources = self.schema_mapper_class.get_subresource_settings
+                for registration in subresources(versioned_model_class, resource_name,
+                                                 resource_settings, lowercase):
+                    self.app.register_resource(*registration)
+                    self.models[registration[0]] = versioned_model_class
+
+
+    def fix_model_version_class(self, versioned_model_class):
+
+        config = self.app.config
+
+        # field names have to be non-prefixed
+        last_updated_field_name = config["LAST_UPDATED"].lstrip('_')
+        etag_field_name = config["ETAG"].lstrip('_')
+        version_field_name = config["VERSION"].lstrip("_")
+        #latest_version_filed_name = config['LATEST_VERSION'].lstrip("_")
+
+        version_id_field_name = config['ID_FIELD'] + config['VERSION_ID_SUFFIX']
+
+
+        new_fields = {
+            # TODO: updating last_updated field every time when saved
+            last_updated_field_name: mongoengine.DateTimeField(
+                db_field=config["LAST_UPDATED"],
+                default=get_utc_time),
+            etag_field_name: mongoengine.StringField(
+                db_field=config["ETAG"],
+                default = ""),
+
+            version_field_name: mongoengine.IntField(
+                db_field=config["VERSION"],
+                default=0
+            ),
+            # latest_version_filed_name: mongoengine.IntField(
+            #     db_field=config["LATEST_VERSION"],
+            #     default=0
+            # ),
+            version_id_field_name.lstrip("_"): mongoengine.ObjectIdField(
+                db_field=version_id_field_name),
+
+
+            # # versioning require inheritance
+            # 'cls' : mongoengine.StringField(
+            #     db_field="_cls",
+            #     default=versioned_model_class.__name__
+            # ),
+            # 'types': mongoengine.ListField(mongoengine.StringField(),
+            #     db_field="_types",
+            #     default=[versioned_model_class.__name__]
+            # )
+        }
+
+
+
+        for attr_name, attr_value in iteritems(new_fields):
+            # If the field does exist, we just check if it has right
+            # type (mongoengine.DateTimeField) and pass
+            if attr_name in versioned_model_class._fields:
+                attr_value = versioned_model_class._fields[attr_name]
+                if not isinstance(attr_value, type(new_fields[attr_name])):
+                    info = (attr_name,  attr_value.__class__.__name__)
+                    raise TypeError("Field '%s' is needed by Eve, but has"
+                                    " wrong type '%s'." % info)
+                continue
+            # The way how we introduce new fields into model class is copied
+            # out of mongoengine.base.DocumentMetaclass
+            attr_value.name = attr_name
+            if not attr_value.db_field:
+                attr_value.db_field = attr_name
+            # TODO: reverse-delete rules
+            attr_value.owner_document = versioned_model_class
+
+            # now add a flag that this is automagically added field - it is
+            # very useful when registering class more than once - create_schema
+            # has to know, if it is user-added or auto-added field.
+            attr_value.eve_field = True
+
+            # now simulate DocumentMetaclass: add class attributes
+            setattr(versioned_model_class, attr_name, attr_value)
+            versioned_model_class._fields[attr_name] = attr_value
+            versioned_model_class._db_field_map[attr_name] = attr_value.db_field
+            versioned_model_class._reverse_db_field_map[attr_value.db_field] = attr_name
+
+            # this is just copied from mongoengine and frankly, i just dont
+            # have a clue, what it does...
+            iterfields = itervalues(versioned_model_class._fields)
+            created = [(v.creation_counter, v.name) for v in iterfields]
+            versioned_model_class._fields_ordered = tuple(i[1] for i in sorted(created))
+
 
     def fix_model_class(self, model_cls):
         """
@@ -189,25 +315,62 @@ class EveMongoengine(object):
         :param model_cls: mongoengine's model class (instance of subclass of
                           :class:`mongoengine.Document`) to be fixed up.
         """
+
+        config = self.app.config
+
         date_field_cls = mongoengine.DateTimeField
+        string_field_cls = mongoengine.StringField
 
         # field names have to be non-prefixed
-        last_updated_field_name = self.last_updated.lstrip('_')
-        date_created_field_name = self.date_created.lstrip('_')
+        last_updated_field_name = config["LAST_UPDATED"].lstrip('_')
+        date_created_field_name = config["DATE_CREATED"].lstrip('_')
+        etag_field_name = config["ETAG"].lstrip('_')
+
         new_fields = {
             # TODO: updating last_updated field every time when saved
-            last_updated_field_name: date_field_cls(db_field=self.last_updated,
-                                                    default=get_utc_time),
-            date_created_field_name: date_field_cls(db_field=self.date_created,
-                                                    default=get_utc_time)
+            last_updated_field_name: mongoengine.DateTimeField(
+                db_field=config["LAST_UPDATED"],
+                default=get_utc_time),
+            date_created_field_name: mongoengine.DateTimeField(
+                db_field=config["DATE_CREATED"],
+                default=get_utc_time),
+            etag_field_name: mongoengine.StringField(
+                db_field=config["ETAG"],
+                default = "")
+
+
+
         }
+
+        if config["VERSIONING"]:
+
+
+
+            version_field_name = config["VERSION"].lstrip("_")
+            new_fields[version_field_name] = mongoengine.IntField(
+                db_field=config["VERSION"],
+                default=0
+            )
+            version_id_field_name = config['ID_FIELD'] + config['VERSION_ID_SUFFIX']
+            new_fields[version_id_field_name.lstrip("_")] = mongoengine.ObjectIdField(
+                db_field=version_id_field_name)
+
+            # # versioning require inheritance
+            # new_fields['cls'] = mongoengine.StringField(
+            #     db_field="_cls",
+            #     default=model_cls.__name__
+            # )
+            # new_fields['types'] = mongoengine.ListField(mongoengine.StringField(),
+            #     db_field="_types",
+            #     default=[model_cls.__name__]
+            # )
 
         for attr_name, attr_value in iteritems(new_fields):
             # If the field does exist, we just check if it has right
             # type (mongoengine.DateTimeField) and pass
             if attr_name in model_cls._fields:
                 attr_value = model_cls._fields[attr_name]
-                if not isinstance(attr_value, mongoengine.DateTimeField):
+                if not isinstance(attr_value, type(new_fields[attr_name])):
                     info = (attr_name,  attr_value.__class__.__name__)
                     raise TypeError("Field '%s' is needed by Eve, but has"
                                     " wrong type '%s'." % info)

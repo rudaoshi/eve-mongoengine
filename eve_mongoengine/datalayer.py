@@ -276,6 +276,7 @@ class MongoengineDataLayer(Mongo):
 
         :param ext: instance of :class:`EveMongoengine`.
         """
+
         # get authentication info
         username = ext.app.config.get('MONGO_USERNAME', None)
         password = ext.app.config.get('MONGO_PASSWORD', None)
@@ -289,10 +290,15 @@ class MongoengineDataLayer(Mongo):
                             port=ext.app.config['MONGO_PORT'])
         self.models = ext.models
         self.app = ext.app
+
+        super(MongoengineDataLayer, self).init_app(self.app)
+
         # create dummy driver instead of PyMongo, which causes errors
         # when instantiating after config was initialized
-        self.driver = type('Driver', (), {})()
-        self.driver.db = get_db()
+
+
+#        self.driver = type('Driver', (), {})()
+#        self.driver.db = get_db()
         # authenticate
         if any(auth):
             self.driver.db.authenticate(username, password)
@@ -330,7 +336,7 @@ class MongoengineDataLayer(Mongo):
         translate = lambda x: model_cls._reverse_db_field_map.get(x)
         projection = [translate(field) for field in projection if
                       field in model_cls._reverse_db_field_map]
-    
+
         if 0 in projection_value:
             qry = qry.exclude(*projection)
         else:
