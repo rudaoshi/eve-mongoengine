@@ -64,7 +64,7 @@ def clean_doc(doc):
     for attr, value in iteritems(dict(doc)):
         if isinstance(value, (list, dict)) and not value:
             del doc[attr]
-    doc.pop('_etag', None)
+#    doc.pop('_etag', None)
 
     return doc
 
@@ -240,7 +240,7 @@ class MongoengineUpdater(object):
         """
         opt = self.datalayer.mongoengine_options
 
-        updates.pop('_etag', None)
+#        updates.pop('_etag', None)
 
         if opt.get('use_atomic_update_for_patch', 1):
             self._update_using_update_one(resource, id_, updates)
