@@ -119,6 +119,12 @@ class EveMongoengine(object):
             except:
                 self.version = "_version"
 
+        if config['SOFT_DELETE']:
+            try:
+                self.deleted = config['DELETED']
+            except:
+                self.deleted = "_deleted"
+
 
     def init_app(self, app):
         """
@@ -227,7 +233,7 @@ class EveMongoengine(object):
         #latest_version_filed_name = config['LATEST_VERSION'].lstrip("_")
 
         version_id_field_name = config['ID_FIELD'] + config['VERSION_ID_SUFFIX']
-
+        deleted_field_name = config["DELETED"].lstrip('_')
 
         new_fields = {
             # TODO: updating last_updated field every time when saved
@@ -249,7 +255,9 @@ class EveMongoengine(object):
             version_id_field_name.lstrip("_"): mongoengine.ObjectIdField(
                 db_field=version_id_field_name),
 
-
+            deleted_field_name: mongoengine.BooleanField(
+                db_field=config["DELETED"],
+                default = False)
             # # versioning require inheritance
             # 'cls' : mongoengine.StringField(
             #     db_field="_cls",
@@ -325,6 +333,7 @@ class EveMongoengine(object):
         last_updated_field_name = config["LAST_UPDATED"].lstrip('_')
         date_created_field_name = config["DATE_CREATED"].lstrip('_')
         etag_field_name = config["ETAG"].lstrip('_')
+        deleted_field_name = config["DELETED"].lstrip('_')
 
         new_fields = {
             # TODO: updating last_updated field every time when saved
@@ -336,7 +345,10 @@ class EveMongoengine(object):
                 default=get_utc_time),
             etag_field_name: mongoengine.StringField(
                 db_field=config["ETAG"],
-                default = "")
+                default = ""),
+            deleted_field_name: mongoengine.BooleanField(
+                db_field=config["DELETED"],
+                default = False)
 
 
 
