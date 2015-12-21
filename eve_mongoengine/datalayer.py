@@ -448,9 +448,7 @@ class MongoengineDataLayer(Mongo):
 
     def _doc_to_model(self, resource, doc):
 
-        # Strip underscores from special key names
-        if '_id' in doc:
-            doc['id'] = doc.pop('_id')
+
 
         cls = self.cls_map[resource]
 
@@ -458,6 +456,10 @@ class MongoengineDataLayer(Mongo):
         # MongoEngine names before attempting to use them.
         translate = lambda x: cls._reverse_db_field_map.get(x, x)
         doc = {translate(k): doc[k] for k in doc}
+
+        # Strip underscores from special key names
+        if '_id' in doc:
+            doc['id'] = doc.pop('_id')
 
         # MongoEngine 0.9 now throws an FieldDoesNotExist when initializing a
         # Document with unknown keys.
