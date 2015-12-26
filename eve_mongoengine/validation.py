@@ -51,8 +51,11 @@ class EveMongoengineValidator(Validator):
             doc = model_cls(**document)
             # rewind all file-like's
             for attr, field in iteritems(model_cls._fields):
-                if isinstance(field, FileField) and attr in document:
+                if (isinstance(field, FileField) and
+                            attr in document and
+                            not isinstance(document[attr], GridFSProxy)):
                     document[attr].stream.seek(0)
+
             try:
                 doc.validate()
             except ValidationError as e:
