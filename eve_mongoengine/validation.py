@@ -19,7 +19,10 @@ from mongoengine import ValidationError, FileField
 
 from eve.io.mongo.validation import Validator
 from eve_mongoengine._compat import iteritems
+from werkzeug.datastructures import FileStorage
+from mongoengine.fields import GridFSProxy
 
+import pymongo
 
 class EveMongoengineValidator(Validator):
     """
@@ -65,3 +68,14 @@ class EveMongoengineValidator(Validator):
         value.
         """
         pass
+
+    def _validate_type_media(self, field, value):
+        """ Enables validation for `media` data type.
+
+        :param field: field name.
+        :param value: field value.
+
+        .. versionadded:: 0.3
+        """
+        if not isinstance(value, FileStorage) and not isinstance(value, GridFSProxy):
+            self._error(field, "file was expected, got '%s' instead." % value)
