@@ -135,6 +135,21 @@ class ResourceClassMap(object):
             return _cls.objects
 
 
+
+def normalize_double_underscore_fields(document):
+    """
+    convert all __ to .
+    """
+    if isinstance(document, basestring):
+        return document.replace("__", ".")
+    elif isinstance(document, list):
+        return [normalize_double_underscore_fields(x) for x in document]
+    elif isinstance(document, dict):
+        return dict((normalize_double_underscore_fields(k), normalize_double_underscore_fields(v))
+                    for k, v in document.iteritems())
+    else:
+        return document
+
 class MongoengineUpdater(object):
     """
     Helper class for managing updates (PATCH requests) through mongoengine
@@ -184,7 +199,7 @@ class MongoengineUpdater(object):
                 for param, value in v.iteritems():
                     kwargs[k + "__" + param] = value
             elif k == "$raw":
-                kwargs["__raw__"] = v
+                kwargs["__raw__"] = normalize_double_underscore_fields(v)
 
         return kwargs
 
