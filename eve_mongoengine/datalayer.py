@@ -179,8 +179,12 @@ class MongoengineUpdater(object):
         for (k, v) in iteritems(updates):
             if k in field_cls._reverse_db_field_map:
                 kwargs["set__%s" % field_cls._reverse_db_field_map[k]] = v
-            elif k in operation_set:
-                kwargs[k] = v
+            elif k in operation_set and isinstance(v, dict):
+                k = k[1:]
+                for param, value in v.iteritems():
+                    kwargs[k + "__" + param] = value
+            elif k == "$raw":
+                kwargs["__raw__"] = v
 
         return kwargs
 
