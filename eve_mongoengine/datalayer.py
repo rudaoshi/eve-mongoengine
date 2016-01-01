@@ -172,8 +172,17 @@ class MongoengineUpdater(object):
         unset__ etc.
         """
         field_cls = self.datalayer.cls_map[resource]
-        nopfx = lambda x: field_cls._reverse_db_field_map[x]
-        return dict(("set__%s" % nopfx(k), v) for (k, v) in iteritems(updates))
+
+        operation_set = {'$set', '$unset', '$inc', '$dec', '$push', '$push_all', '$pop', '$pull', '$pull_all', '$add_to_set'}
+
+        kwargs = dict()
+        for (k, v) in iteritems(updates):
+            if k in field_cls._reverse_db_field_map:
+                kwargs["set__%s" % field_cls._reverse_db_field_map[k]] = v
+            elif k in operation_set:
+                kwargs[k] = v
+
+        return kwargs
 
     def _has_empty_list_recurse(self, value):
         if value == []:

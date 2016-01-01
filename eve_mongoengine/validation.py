@@ -21,7 +21,7 @@ from eve.io.mongo.validation import Validator
 from eve_mongoengine._compat import iteritems
 from werkzeug.datastructures import FileStorage
 from mongoengine.fields import GridFSProxy
-
+from bson import ObjectId
 import pymongo
 
 class EveMongoengineValidator(Validator):
@@ -80,5 +80,7 @@ class EveMongoengineValidator(Validator):
 
         .. versionadded:: 0.3
         """
-        if not isinstance(value, FileStorage) and not isinstance(value, GridFSProxy):
+        if (not isinstance(value, FileStorage) and
+                not isinstance(value, GridFSProxy) and
+                not isinstance(value, ObjectId)):
             self._error(field, "file was expected, got '%s' instead." % value)
